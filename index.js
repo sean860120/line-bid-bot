@@ -8,7 +8,7 @@ app.use(express.json());
 // ===== LINE =====
 const LINE_TOKEN = '你的 LINE token';
 
-// ===== Google Sheets =====
+// ===== Sheets =====
 const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
 const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -27,24 +27,20 @@ async function getUserName(userId) {
     );
     return res.data.displayName || userId;
   } catch (err) {
-    console.log('取得名稱失敗，使用 userId');
+    console.log('LINE 名稱取得失敗，使用 userId');
     return userId;
   }
 }
 
-// ===== 解析 E1（台灣時間字串）=====
+// ===== 解析 E1（YYYY/MM/DD HH:mm）=====
 function parseE1(str) {
-  // YYYY/MM/DD HH:mm
   const [date, time] = str.split(' ');
+  if (!date || !time) return null;
+
   const [y, m, d] = date.split('/').map(Number);
   const [hh, mm] = time.split(':').map(Number);
-  return new Date(y, m - 1, d, hh, mm);
-}
 
-// ===== 格式化時間 =====
-function formatTime(date) {
-  const pad = n => n.toString().padStart(2, '0');
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return new Date(y, m - 1, d, hh, mm);
 }
 
 app.post('/', async (req, res) => {
@@ -55,26 +51,29 @@ app.post('/', async (req, res) => {
     }
 
     const match = event.message.text.trim().match(bidRegex);
-    if (!match) return res.sendStatus(200); // 非出價不回
+    if (!match) return res.sendStatus(200);
 
-    // ===== 讀取 E1 =====
+    // ===== 讀 E1 =====
     const e1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!E1'
     });
+
     const e1Raw = e1Res.data.values?.[0]?.[0];
     if (!e1Raw) return res.sendStatus(200); // 沒活動
 
     const endTime = parseE1(e1Raw);
-    const now = new Date();
+    if (!endTime) return res.sendStatus(200);
 
+    const now = new Date();
     if (now >= endTime) return res.sendStatus(200); // 已截止
 
-    // ===== 讀取 D1 =====
+    // ===== 讀 D1 =====
     const d1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
     });
+
     const currentMax = parseInt(d1Res.data.values?.[0]?.[0] || '0', 10);
     const bid = parseInt(match[1], 10);
 
@@ -85,7 +84,6 @@ app.post('/', async (req, res) => {
     } else {
       const userName = await getUserName(event.source.userId);
 
-      // A/B 新增
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B',
@@ -94,7 +92,6 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bid]] }
       });
 
-      // 更新 C1/D1
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!C1:D1',
@@ -102,22 +99,9 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bid]] }
       });
 
-      // ===== 倒數 3 分鐘延長 =====
-      const diffMin = (endTime - now) / 60000;
-      if (diffMin <= 3) {
-        const newEnd = new Date(now.getTime() + 3 * 60000);
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: '工作表1!E1',
-          valueInputOption: 'RAW',
-          requestBody: { values: [[formatTime(newEnd)]] }
-        });
-      }
-
       replyText = `已收到您的出價：${bid} 元`;
     }
 
-    // ===== 回覆 LINE =====
     await axios.post(
       'https://api.line.me/v2/bot/message/reply',
       {
