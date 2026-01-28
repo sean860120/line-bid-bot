@@ -15,7 +15,7 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== 出價正則 =====
+// ===== 出價正則，允許空格 =====
 const bidRegex = /^出價\s*([0-9]+)\s*$/;
 
 // ===== 取得用戶名稱 =====
@@ -38,16 +38,28 @@ app.post('/', async (req, res) => {
   }
 
   const userMessage = event.message.text.trim();
-  const userName = await getUserName(event.source.userId); // 使用顯示名稱
   const match = userMessage.match(bidRegex);
+  if (!match) {
+    // 格式不符，不回應
+    return res.status(200).end();
+  }
+
+  const bidAmount = parseInt(match[1], 10);
+  const userName = await getUserName(event.source.userId);
+
   let replyText = '';
+  try {
+    // 1️⃣ 讀取 D1 目前最高出價
+    const getRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: '工作表1!D1'
+    });
+    const currentMax = parseInt((getRes.data.values?.[0]?.[0] || '0'), 10);
 
-  if (match) {
-    const bidAmount = parseInt(match[1], 10);
-    replyText = `已收到你的出價：${bidAmount} 元`;
-
-    try {
-      // 1️⃣ 追加新出價到 A/B 欄
+    if (bidAmount <= currentMax) {
+      replyText = '很抱歉，您的出價未高於當前最高出價';
+    } else {
+      // 高於目前最高出價，登錄 A/B
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B',
@@ -56,14 +68,14 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bidAmount]] }
       });
 
-      // 2️⃣ 讀取所有出價
-      const getRes = await sheets.spreadsheets.values.get({
+      // 重新讀取所有 A/B
+      const allRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B'
       });
-      const rows = getRes.data.values || [];
+      const rows = allRes.data.values || [];
 
-      // 3️⃣ 找出最高出價（相同取最先登記）
+      // 找最高出價及姓名
       let maxBid = -1;
       let maxUser = '';
       for (const row of rows) {
@@ -75,7 +87,7 @@ app.post('/', async (req, res) => {
         }
       }
 
-      // 4️⃣ 更新 C1/D1
+      // 更新 C1/D1
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!C1:D1',
@@ -83,13 +95,12 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[maxUser, maxBid]] }
       });
 
-    } catch (err) {
-      console.error('❌ Google Sheets error:', err);
-      replyText = '系統發生錯誤，無法記錄出價';
+      replyText = `已收到您的出價：${bidAmount} 元`;
     }
 
-  } else {
-    replyText = '請輸入正確格式：出價 <金額>';
+  } catch (err) {
+    console.error('❌ Google Sheets error:', err);
+    replyText = '系統發生錯誤，無法記錄出價';
   }
 
   // 回覆 LINE
