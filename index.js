@@ -1,122 +1,137 @@
-const express = require('express')
-const { Client } = require('@line/bot-sdk')
-const { google } = require('googleapis')
+const express = require('express');
+const axios = require('axios');
+const { google } = require('googleapis');
 
-/* ===== LINE 設定 ===== */
-const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
-}
-const client = new Client(config)
+const app = express();
+app.use(express.json());
 
-/* ===== Google Sheets ===== */
-const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc'
-const SHEET_NAME = '工作表1'
+// ===== LINE =====
+const LINE_TOKEN = '你的 LINE token';
 
+// ===== Google Sheets =====
+const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
-})
+});
+const sheets = google.sheets({ version: 'v4', auth });
 
-const sheets = google.sheets({ version: 'v4', auth })
+// ===== 出價格式 =====
+const bidRegex = /^出價\s*([0-9]+)\s*$/;
 
-/* ===== 工具 ===== */
-function nowTW() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
-}
-
-function parseBid(text) {
-  const m = text.match(/^出價\s*(\d+)$/)
-  return m ? Number(m[1]) : null
-}
-
-/* ===== Server ===== */
-const app = express()
-app.use(express.json())
-
-app.post('/webhook', async (req, res) => {
+// ===== 取得 LINE 名稱 =====
+async function getUserName(userId) {
   try {
-    const event = req.body.events?.[0]
-    if (!event || event.type !== 'message' || event.message.type !== 'text') {
-      return res.sendStatus(200)
+    const res = await axios.get(
+      `https://api.line.me/v2/bot/profile/${userId}`,
+      { headers: { Authorization: `Bearer ${LINE_TOKEN}` } }
+    );
+    return res.data.displayName || userId;
+  } catch (err) {
+    console.log('取得名稱失敗，使用 userId');
+    return userId;
+  }
+}
+
+// ===== 解析 E1（台灣時間字串）=====
+function parseE1(str) {
+  // YYYY/MM/DD HH:mm
+  const [date, time] = str.split(' ');
+  const [y, m, d] = date.split('/').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  return new Date(y, m - 1, d, hh, mm);
+}
+
+// ===== 格式化時間 =====
+function formatTime(date) {
+  const pad = n => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+app.post('/', async (req, res) => {
+  try {
+    const event = req.body.events?.[0];
+    if (!event || event.type !== 'message' || !event.message.text) {
+      return res.sendStatus(200);
     }
 
-    const bidAmount = parseBid(event.message.text)
-    if (!bidAmount) return res.sendStatus(200)
+    const match = event.message.text.trim().match(bidRegex);
+    if (!match) return res.sendStatus(200); // 非出價不回
 
-    const sheet = await sheets.spreadsheets.values.get({
+    // ===== 讀取 E1 =====
+    const e1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A1:E`
-    })
+      range: '工作表1!E1'
+    });
+    const e1Raw = e1Res.data.values?.[0]?.[0];
+    if (!e1Raw) return res.sendStatus(200); // 沒活動
 
-    const rows = sheet.data.values || []
-    const e1 = rows[0]?.[4]
-    if (!e1) return res.sendStatus(200)
+    const endTime = parseE1(e1Raw);
+    const now = new Date();
 
-    let endTime = new Date(e1 + '+08:00')
-    const now = nowTW()
-    if (now >= endTime) return res.sendStatus(200)
+    if (now >= endTime) return res.sendStatus(200); // 已截止
 
-    const highest = Number(rows[0]?.[3] || 0)
-    if (bidAmount <= highest) {
-      await client.replyMessage(event.replyToken, {
-        type: 'text',
-        text: '很抱歉，您的出價未高於當前最高出價。'
-      })
-      return res.sendStatus(200)
-    }
-
-    let displayName = event.source.userId
-    try {
-      const profile = await client.getProfile(event.source.userId)
-      displayName = profile.displayName
-    } catch {}
-
-    await sheets.spreadsheets.values.append({
+    // ===== 讀取 D1 =====
+    const d1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:B`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [[displayName, bidAmount]] }
-    })
+      range: '工作表1!D1'
+    });
+    const currentMax = parseInt(d1Res.data.values?.[0]?.[0] || '0', 10);
+    const bid = parseInt(match[1], 10);
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!C1:D1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [[displayName, bidAmount]] }
-    })
+    let replyText = '';
 
-    if (endTime - now <= 3 * 60 * 1000) {
-      const newEnd = new Date(now.getTime() + 3 * 60 * 1000)
-      const pad = n => String(n).padStart(2, '0')
-      const newTime =
-        `${newEnd.getFullYear()}-${pad(newEnd.getMonth() + 1)}-${pad(newEnd.getDate())} ` +
-        `${pad(newEnd.getHours())}:${pad(newEnd.getMinutes())}`
+    if (bid <= currentMax) {
+      replyText = '很抱歉，您的出價未高於當前最高出價';
+    } else {
+      const userName = await getUserName(event.source.userId);
 
+      // A/B 新增
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: '工作表1!A:B',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [[userName, bid]] }
+      });
+
+      // 更新 C1/D1
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!E1`,
+        range: '工作表1!C1:D1',
         valueInputOption: 'RAW',
-        requestBody: { values: [[newTime]] }
-      })
+        requestBody: { values: [[userName, bid]] }
+      });
+
+      // ===== 倒數 3 分鐘延長 =====
+      const diffMin = (endTime - now) / 60000;
+      if (diffMin <= 3) {
+        const newEnd = new Date(now.getTime() + 3 * 60000);
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: '工作表1!E1',
+          valueInputOption: 'RAW',
+          requestBody: { values: [[formatTime(newEnd)]] }
+        });
+      }
+
+      replyText = `已收到您的出價：${bid} 元`;
     }
 
-    await client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: `已收到您的出價：${bidAmount} 元`
-    })
+    // ===== 回覆 LINE =====
+    await axios.post(
+      'https://api.line.me/v2/bot/message/reply',
+      {
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: replyText }]
+      },
+      { headers: { Authorization: `Bearer ${LINE_TOKEN}` } }
+    );
 
-    res.sendStatus(200)
+    res.sendStatus(200);
   } catch (err) {
-    console.error(err)
-    res.sendStatus(200)
+    console.error(err);
+    res.sendStatus(200);
   }
-})
+});
 
-app.get('/', (_, res) => res.send('OK'))
-
-/* 🔴 這行非常重要 */
-const PORT = process.env.PORT || 8080
-app.listen(PORT, () => {
-  console.log('Server running on port', PORT)
-})
+app.listen(process.env.PORT || 8080);
