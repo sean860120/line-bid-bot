@@ -25,7 +25,7 @@ app.post('/', async (req, res) => {
   }
 
   const userMessage = event.message.text.trim();
-  const userId = event.source.userId;
+  const userName = event.source.userId; // 先用 userId 暫存，之後可改為用戶名稱
   const match = userMessage.match(bidRegex);
   let replyText = '';
 
@@ -34,43 +34,42 @@ app.post('/', async (req, res) => {
     replyText = `已收到你的出價：${bidAmount} 元`;
 
     try {
-      // 取得 A/B 欄
+      // 1️⃣ 先把新出價往下新增一行
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: '工作表1!A:B',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: [[userName, bidAmount]]
+        }
+      });
+
+      // 2️⃣ 讀取所有 A/B 欄資料
       const getRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B'
       });
       const rows = getRes.data.values || [];
 
-      // 檢查是否已有用戶紀錄
-      let found = false;
-      for (let i = 0; i < rows.length; i++) {
-        if (rows[i][0] === userId) {
-          rows[i][1] = bidAmount;
-          found = true;
-          break;
+      // 3️⃣ 計算最高出價及姓名（若一樣取最早那筆）
+      let maxBid = -1;
+      let maxUser = '';
+      for (const row of rows) {
+        const name = row[0];
+        const bid = parseInt(row[1] || 0, 10);
+        if (bid > maxBid) {
+          maxBid = bid;
+          maxUser = name;
         }
       }
-      if (!found) {
-        rows.push([userId, bidAmount]);
-      }
 
-      // 更新 A/B 欄
+      // 4️⃣ 更新 C1/D1
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: '工作表1!A:B',
+        range: '工作表1!C1:D1',
         valueInputOption: 'RAW',
-        requestBody: { values: rows }
-      });
-
-      // 計算最高出價
-      const maxBid = rows.reduce((max, r) => Math.max(max, parseInt(r[1] || 0, 10)), 0);
-
-      // 更新 C1
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: '工作表1!C1',
-        valueInputOption: 'RAW',
-        requestBody: { values: [[maxBid]] }
+        requestBody: { values: [[maxUser, maxBid]] }
       });
 
     } catch (err) {
