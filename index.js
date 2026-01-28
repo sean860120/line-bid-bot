@@ -18,6 +18,19 @@ const sheets = google.sheets({ version: 'v4', auth });
 // ===== 出價正則 =====
 const bidRegex = /^出價\s*([0-9]+)\s*$/;
 
+// ===== 取得用戶名稱 =====
+async function getUserName(userId) {
+  try {
+    const res = await axios.get(`https://api.line.me/v2/bot/profile/${userId}`, {
+      headers: { 'Authorization': `Bearer ${LINE_TOKEN}` }
+    });
+    return res.data.displayName;
+  } catch (err) {
+    console.error('❌ 取得用戶名稱失敗', err.response?.data || err.message);
+    return userId; // 失敗就用 userId
+  }
+}
+
 app.post('/', async (req, res) => {
   const event = req.body.events && req.body.events[0];
   if (!event || !event.replyToken || event.type !== 'message' || !event.message.text) {
@@ -25,7 +38,7 @@ app.post('/', async (req, res) => {
   }
 
   const userMessage = event.message.text.trim();
-  const userName = event.source.userId; // 先用 userId 暫存，之後可改為用戶名稱
+  const userName = await getUserName(event.source.userId); // 使用顯示名稱
   const match = userMessage.match(bidRegex);
   let replyText = '';
 
@@ -34,25 +47,23 @@ app.post('/', async (req, res) => {
     replyText = `已收到你的出價：${bidAmount} 元`;
 
     try {
-      // 1️⃣ 先把新出價往下新增一行
+      // 1️⃣ 追加新出價到 A/B 欄
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
-        requestBody: {
-          values: [[userName, bidAmount]]
-        }
+        requestBody: { values: [[userName, bidAmount]] }
       });
 
-      // 2️⃣ 讀取所有 A/B 欄資料
+      // 2️⃣ 讀取所有出價
       const getRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B'
       });
       const rows = getRes.data.values || [];
 
-      // 3️⃣ 計算最高出價及姓名（若一樣取最早那筆）
+      // 3️⃣ 找出最高出價（相同取最先登記）
       let maxBid = -1;
       let maxUser = '';
       for (const row of rows) {
@@ -89,7 +100,7 @@ app.post('/', async (req, res) => {
       { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` } }
     );
   } catch (err) {
-    console.error('❌ LINE reply error:', err.response ? err.response.data : err.message);
+    console.error('❌ LINE reply error:', err.response?.data || err.message);
   }
 
   res.status(200).end();
