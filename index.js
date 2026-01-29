@@ -15,8 +15,8 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== 出價正則 =====
-const bidRegex = /^出價\s*([0-9]+)\s*$/;
+// ===== 出價正則（允許出價X元、出價 X元、出價  X元 等） =====
+const bidRegex = /^出價\s*([0-9]+)\s*元?$/;
 
 // ===== 取得用戶名稱 =====
 async function getUserName(userId) {
