@@ -23,7 +23,7 @@ async function getUserName(userId) {
   try {
     const res = await axios.get(
       `https://api.line.me/v2/bot/profile/${userId}`,
-      { headers: { 'Authorization': `Bearer ${LINE_TOKEN}` } }
+      { headers: { Authorization: `Bearer ${LINE_TOKEN}` } }
     );
     return res.data.displayName;
   } catch (err) {
@@ -48,9 +48,9 @@ app.post('/', async (req, res) => {
   const userName = await getUserName(event.source.userId);
 
   let replyText = '';
-  try {
 
-    // =================【新增】F1 時間判斷（唯一新增的功能）=================
+  try {
+    // ===== F1 時間判斷（唯一新增 & 修正的地方）=====
     const f1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!F1'
@@ -63,27 +63,20 @@ app.post('/', async (req, res) => {
       return res.status(200).end();
     }
 
-    let f1Time;
+    // 將 F1 當作「台灣時間」
+    const f1Time = new Date(f1Raw.replace(/-/g, '/'));
 
-    // F1 是數字（Google Sheets 時間序號）
-    if (typeof f1Raw === 'number') {
-      f1Time = new Date((f1Raw - 25569) * 86400 * 1000);
-    } 
-    // F1 是字串時間
-    else {
-      f1Time = new Date(f1Raw.replace(/-/g, '/'));
-    }
+    // 取得現在「台灣時間」
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
-    const now = new Date();
-
-    // 現在時間 >= F1 → 不回覆
+    // 現在時間 >= F1 → 不回覆、不出價
     if (now.getTime() >= f1Time.getTime()) {
       return res.status(200).end();
     }
-    // =================【新增結束】=================
+    // ===== F1 判斷結束 =====
 
 
-    // 1️⃣ 讀取 D1 目前最高出價（以下全部原封不動）
+    // ===== 以下全部原封不動 =====
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -93,7 +86,6 @@ app.post('/', async (req, res) => {
     if (bidAmount <= currentMax) {
       replyText = '很抱歉，您的出價未高於當前最高出價';
     } else {
-      // 高於目前最高出價，登錄 A/B
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B',
@@ -110,7 +102,7 @@ app.post('/', async (req, res) => {
     replyText = '系統發生錯誤，無法記錄出價';
   }
 
-  // 回覆 LINE（完全沒動）
+  // ===== 回覆 LINE（完全沒動）=====
   try {
     await axios.post(
       'https://api.line.me/v2/bot/message/reply',
@@ -121,7 +113,7 @@ app.post('/', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LINE_TOKEN}`
+          Authorization: `Bearer ${LINE_TOKEN}`
         }
       }
     );
