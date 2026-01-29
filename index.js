@@ -84,7 +84,7 @@ app.post('/', async (req, res) => {
     const currentMax = parseInt((getRes.data.values?.[0]?.[0] || '0'), 10);
 
     if (bidAmount <= currentMax) {
-      replyText = `很抱歉，您的出價未高於最高出價\n目前截標時間為： ${f1Raw}`;
+      replyText = `您的出價未高於最高出價\n目前截標時間為： ${f1Raw}`;
     } else {
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
