@@ -6,10 +6,10 @@ const app = express();
 app.use(express.json());
 
 // ===== LINE 設定 =====
-const LINE_TOKEN = 'nia/AX0e2XvFzJM+PiC0SZ9JTuHKbUBu6KnDA1wImID+53CGwmc1qDEb+DWYJ1fQeVH/bo8QSeOiguFvNZZYPXUaYJzphLpsO+MfQqQIQLTOQrc/N+cSn+es9KzeRiMrzch9FQhSed8wgu4ASu8pWgdB04t89/1O/w1cDnyilFU=';
+const LINE_TOKEN = '你的LINE_TOKEN';
 
 // ===== Google Sheets 設定 =====
-const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
+const SPREADSHEET_ID = '你的SPREADSHEET_ID';
 const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
@@ -68,34 +68,9 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bidAmount]] }
       });
 
-      // 重新讀取所有 A/B
-      const allRes = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: '工作表1!A:B'
-      });
-      const rows = allRes.data.values || [];
-
-      // 找最高出價及姓名
-      let maxBid = -1;
-      let maxUser = '';
-      for (const row of rows) {
-        const name = row[0];
-        const bid = parseInt(row[1] || 0, 10);
-        if (bid > maxBid) {
-          maxBid = bid;
-          maxUser = name;
-        }
-      }
-
-      // 更新 C1/D1
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: '工作表1!C1:D1',
-        valueInputOption: 'RAW',
-        requestBody: { values: [[maxUser, maxBid]] }
-      });
-
-      replyText = `已收到您的出價：${bidAmount} 元`;
+      // ✅ 不再寫入 C1/D1
+      // 如果想保留查最高出價給 LINE 回覆用
+      replyText = `已收到您的出價：${bidAmount} 元（目前最高出價：${bidAmount} 元）`;
     }
 
   } catch (err) {
