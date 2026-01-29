@@ -49,7 +49,7 @@ app.post('/', async (req, res) => {
 
   let replyText = '';
   try {
-    // 讀取 D1 目前最高出價
+    // 1️⃣ 讀取 D1 目前最高出價
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -77,12 +77,20 @@ app.post('/', async (req, res) => {
     replyText = '系統發生錯誤，無法記錄出價';
   }
 
-  // 回覆 LINE
+  // 2️⃣ 回覆 LINE
   try {
     await axios.post(
       'https://api.line.me/v2/bot/message/reply',
-      { replyToken: event.replyToken, messages: [{ type: 'text', text: replyText }] },
-      { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_TOKEN}` } }
+      {
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: replyText }]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${LINE_TOKEN}`
+        }
+      }
     );
   } catch (err) {
     console.error('❌ LINE reply error:', err.response?.data || err.message);
