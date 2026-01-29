@@ -49,6 +49,25 @@ app.post('/', async (req, res) => {
 
   let replyText = '';
   try {
+    const f1Res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: '工作表1!F1'
+    });
+
+    const f1Value = f1Res.data.values?.[0]?.[0];
+
+    // F1 沒時間 → 不回覆
+    if (!f1Value) {
+      return res.status(200).end();
+    }
+
+    const f1Time = new Date(f1Value);
+    const now = new Date();
+
+    // 現在時間 > F1 → 不回覆
+    if (now > f1Time) {
+      return res.status(200).end();
+    }
     // 1️⃣ 讀取 D1 目前最高出價
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
