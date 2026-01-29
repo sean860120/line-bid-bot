@@ -68,7 +68,16 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bidAmount]] }
       });
 
-      // ✅ 不再寫入 C1/D1
+      // ✅ 不再寫入 C1/D1（原本更新 C1/D1 的程式已註解）
+      /*
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: '工作表1!C1:D1',
+        valueInputOption: 'RAW',
+        requestBody: { values: [[maxUser, maxBid]] }
+      });
+      */
+
       replyText = `已收到您的出價：${bidAmount} 元（目前最高出價：${bidAmount} 元）`;
     }
 
