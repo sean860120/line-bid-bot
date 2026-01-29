@@ -61,13 +61,17 @@ app.post('/', async (req, res) => {
       return res.status(200).end();
     }
 
-    const f1Time = new Date(f1Value);
-    const now = new Date();
+const f1Time = new Date(f1Value.replace(/-/g, '/'));
+const now = new Date();
 
-    // 現在時間 > F1 → 不回覆
-    if (now > f1Time) {
-      return res.status(200).end();
-    }
+// DEBUG 用（可先留著觀察）
+console.log('NOW:', now.toISOString());
+console.log('F1 :', f1Time.toISOString());
+
+// 現在時間 > F1 → 不回覆
+if (now.getTime() > f1Time.getTime()) {
+  return res.status(200).end();
+}
     // 1️⃣ 讀取 D1 目前最高出價
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
