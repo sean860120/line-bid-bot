@@ -50,7 +50,7 @@ app.post('/', async (req, res) => {
   let replyText = '';
 
   try {
-    // ===== F1 時間判斷（唯一新增 & 修正的地方）=====
+    // ===== F1 時間判斷 =====
     const f1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!F1'
@@ -76,7 +76,7 @@ app.post('/', async (req, res) => {
     // ===== F1 判斷結束 =====
 
 
-    // ===== 以下全部原封不動 =====
+    // ===== 原本出價流程，只修改 replyText =====
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -84,7 +84,7 @@ app.post('/', async (req, res) => {
     const currentMax = parseInt((getRes.data.values?.[0]?.[0] || '0'), 10);
 
     if (bidAmount <= currentMax) {
-      replyText = '很抱歉，您的出價未高於當前最高出價';
+      replyText = `很抱歉，您的出價未高於當前最高出價\n目前截標時間為 ${f1Raw}`;
     } else {
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
@@ -94,7 +94,7 @@ app.post('/', async (req, res) => {
         requestBody: { values: [[userName, bidAmount]] }
       });
 
-      replyText = `已收到您的出價：${bidAmount} 元`;
+      replyText = `已收到您的出價：${bidAmount} 元\n目前截標時間為 ${f1Raw}`;
     }
 
   } catch (err) {
@@ -102,7 +102,7 @@ app.post('/', async (req, res) => {
     replyText = '系統發生錯誤，無法記錄出價';
   }
 
-  // ===== 回覆 LINE（完全沒動）=====
+  // ===== 回覆 LINE =====
   try {
     await axios.post(
       'https://api.line.me/v2/bot/message/reply',
