@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // ===== LINE 設定 =====
-const LINE_TOKEN = '你的LINE_TOKEN';
+const LINE_TOKEN = '你的LINE_TOKEN'; // <-- 確保單行、無換行或多餘空格
 
 // ===== Google Sheets 設定 =====
 const SPREADSHEET_ID = '你的SPREADSHEET_ID';
@@ -49,7 +49,7 @@ app.post('/', async (req, res) => {
 
   let replyText = '';
   try {
-    // 1️⃣ 讀取 D1 目前最高出價
+    // 讀取 D1 目前最高出價
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -69,7 +69,6 @@ app.post('/', async (req, res) => {
       });
 
       // ✅ 不再寫入 C1/D1
-      // 如果想保留查最高出價給 LINE 回覆用
       replyText = `已收到您的出價：${bidAmount} 元（目前最高出價：${bidAmount} 元）`;
     }
 
