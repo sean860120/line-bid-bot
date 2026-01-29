@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // ===== LINE 設定 =====
-const LINE_TOKEN = 'nia/AX0e2XvFzJM+PiC0SZ9JTuHKbUBu6KnDA1wImID+53CGwmc1qDEb+DWYJ1fQeVH/bo8QSeOiguFvNZZYPXUaYJzphLpsO+MfQqQIQLTOQrc/N+cSn+es9KzeRiMrzch9FQhSed8wgu4ASu8pWgdB04t89/1O/w1cDnyilFU='; // <-- 確保單行、無換行或多餘空格
+const LINE_TOKEN = 'nia/AX0e2XvFzJM+PiC0SZ9JTuHKbUBu6KnDA1wImID+53CGwmc1qDEb+DWYJ1fQeVH/bo8QSeOiguFvNZZYPXUaYJzphLpsO+MfQqQIQLTOQrc/N+cSn+es9KzeRiMrzch9FQhSed8wgu4ASu8pWgdB04t89/1O/w1cDnyilFU=';
 
 // ===== Google Sheets 設定 =====
 const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
@@ -15,19 +15,20 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== 出價正則，允許空格 =====
+// ===== 出價正則 =====
 const bidRegex = /^出價\s*([0-9]+)\s*$/;
 
 // ===== 取得用戶名稱 =====
 async function getUserName(userId) {
   try {
-    const res = await axios.get(`https://api.line.me/v2/bot/profile/${userId}`, {
-      headers: { 'Authorization': `Bearer ${LINE_TOKEN}` }
-    });
+    const res = await axios.get(
+      `https://api.line.me/v2/bot/profile/${userId}`,
+      { headers: { 'Authorization': `Bearer ${LINE_TOKEN}` } }
+    );
     return res.data.displayName;
   } catch (err) {
     console.error('❌ 取得用戶名稱失敗', err.response?.data || err.message);
-    return userId; // 失敗就用 userId
+    return userId;
   }
 }
 
@@ -40,7 +41,6 @@ app.post('/', async (req, res) => {
   const userMessage = event.message.text.trim();
   const match = userMessage.match(bidRegex);
   if (!match) {
-    // 格式不符，不回應
     return res.status(200).end();
   }
 
@@ -49,30 +49,41 @@ app.post('/', async (req, res) => {
 
   let replyText = '';
   try {
+
+    // =================【新增】F1 時間判斷（唯一新增的功能）=================
     const f1Res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!F1'
     });
 
-    const f1Value = f1Res.data.values?.[0]?.[0];
+    const f1Raw = f1Res.data.values?.[0]?.[0];
 
-    // F1 沒時間 → 不回覆
-    if (!f1Value) {
+    // F1 沒值 → 不回覆
+    if (!f1Raw) {
       return res.status(200).end();
     }
 
-const f1Time = new Date(f1Value.replace(/-/g, '/'));
-const now = new Date();
+    let f1Time;
 
-// DEBUG 用（可先留著觀察）
-console.log('NOW:', now.toISOString());
-console.log('F1 :', f1Time.toISOString());
+    // F1 是數字（Google Sheets 時間序號）
+    if (typeof f1Raw === 'number') {
+      f1Time = new Date((f1Raw - 25569) * 86400 * 1000);
+    } 
+    // F1 是字串時間
+    else {
+      f1Time = new Date(f1Raw.replace(/-/g, '/'));
+    }
 
-// 現在時間 > F1 → 不回覆
-if (now.getTime() > f1Time.getTime()) {
-  return res.status(200).end();
-}
-    // 1️⃣ 讀取 D1 目前最高出價
+    const now = new Date();
+
+    // 現在時間 >= F1 → 不回覆
+    if (now.getTime() >= f1Time.getTime()) {
+      return res.status(200).end();
+    }
+    // =================【新增結束】=================
+
+
+    // 1️⃣ 讀取 D1 目前最高出價（以下全部原封不動）
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -91,16 +102,6 @@ if (now.getTime() > f1Time.getTime()) {
         requestBody: { values: [[userName, bidAmount]] }
       });
 
-      // ✅ 不再寫入 C1/D1（原本更新 C1/D1 的程式已註解）
-      /*
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: '工作表1!C1:D1',
-        valueInputOption: 'RAW',
-        requestBody: { values: [[maxUser, maxBid]] }
-      });
-      */
-
       replyText = `已收到您的出價：${bidAmount} 元`;
     }
 
@@ -109,7 +110,7 @@ if (now.getTime() > f1Time.getTime()) {
     replyText = '系統發生錯誤，無法記錄出價';
   }
 
-  // 2️⃣ 回覆 LINE
+  // 回覆 LINE（完全沒動）
   try {
     await axios.post(
       'https://api.line.me/v2/bot/message/reply',
