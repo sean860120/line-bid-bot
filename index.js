@@ -57,7 +57,7 @@ app.post('/', async (req, res) => {
     const currentMax = parseInt((getRes.data.values?.[0]?.[0] || '0'), 10);
 
     if (bidAmount <= currentMax) {
-      replyText = '很抱歉，您的出價無效（目前最高出價：${bidAmount} 元）';
+      replyText = '很抱歉，您的出價未高於當前最高出價';
     } else {
       // 高於目前最高出價，登錄 A/B
       await sheets.spreadsheets.values.append({
