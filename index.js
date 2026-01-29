@@ -6,10 +6,10 @@ const app = express();
 app.use(express.json());
 
 // ===== LINE 設定 =====
-const LINE_TOKEN = '你的LINE_TOKEN'; // <-- 確保單行、無換行或多餘空格
+const LINE_TOKEN = 'nia/AX0e2XvFzJM+PiC0SZ9JTuHKbUBu6KnDA1wImID+53CGwmc1qDEb+DWYJ1fQeVH/bo8QSeOiguFvNZZYPXUaYJzphLpsO+MfQqQIQLTOQrc/N+cSn+es9KzeRiMrzch9FQhSed8wgu4ASu8pWgdB04t89/1O/w1cDnyilFU='; // <-- 確保單行、無換行或多餘空格
 
 // ===== Google Sheets 設定 =====
-const SPREADSHEET_ID = '你的SPREADSHEET_ID';
+const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
 const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
