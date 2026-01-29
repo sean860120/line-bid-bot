@@ -1,97 +1,96 @@
-const express = require("express");
-const { google } = require("@googleapis/sheets");
-const line = require("@line/bot-sdk");
+const express = require('express');
+const axios = require('axios');
+const { google } = require('googleapis');
 
 const app = express();
 app.use(express.json());
 
-/* ======================
-   LINE 設定
-====================== */
-const lineClient = new line.Client({
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
-});
+// ===== LINE 設定 =====
+const LINE_TOKEN = '你的 LINE TOKEN';
 
-/* ======================
-   Google Sheets 設定
-====================== */
+// ===== Google Sheets 設定 =====
+const SPREADSHEET_ID = '1kp8Kdji875zamSm6UOs1WOPJAM51182WMDmeiZSYSJc';
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
+const sheets = google.sheets({ version: 'v4', auth });
 
-const sheets = google.sheets({ version: "v4", auth });
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = "Sheet1"; // ← 如果不是這個名稱記得改
+// ===== 出價格式 =====
+const bidRegex = /^出價\s*([0-9]+)\s*$/;
 
-/* ======================
-   LINE Webhook
-====================== */
-app.post("/webhook", async (req, res) => {
+// ===== 取得 LINE 名稱 =====
+async function getUserName(userId) {
   try {
-    const events = req.body.events;
-    for (const event of events) {
-      if (event.type !== "message") continue;
-      if (event.message.type !== "text") continue;
+    const res = await axios.get(
+      `https://api.line.me/v2/bot/profile/${userId}`,
+      { headers: { Authorization: `Bearer ${LINE_TOKEN}` } }
+    );
+    return res.data.displayName;
+  } catch (err) {
+    console.error('❌ 取得 LINE 名稱失敗', err.message);
+    return userId;
+  }
+}
 
-      const text = event.message.text.trim();
+app.post('/', async (req, res) => {
+  const event = req.body.events?.[0];
+  if (!event || event.type !== 'message' || !event.message.text) {
+    return res.sendStatus(200);
+  }
 
-      // 只接受「出價 + 金額」
-      const match = text.match(/^出價\s*(\d+)$/);
-      if (!match) continue;
+  const match = event.message.text.trim().match(bidRegex);
+  if (!match) return res.sendStatus(200);
 
-      const bidAmount = Number(match[1]);
-      const userId = event.source.userId;
+  const bidAmount = parseInt(match[1], 10);
+  const userName = await getUserName(event.source.userId);
 
-      /* ===== 取得 LINE 顯示名稱 ===== */
-      const profile = await lineClient.getProfile(userId);
-      const displayName = profile.displayName;
+  let replyText = '';
 
-      /* ===== 讀取目前最高出價（D1）===== */
-      const readRes = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!D1`
-      });
+  try {
+    // 只讀 D1（最高出價）
+    const d1Res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: '工作表1!D1'
+    });
+    const currentMax = parseInt(d1Res.data.values?.[0]?.[0] || '0', 10);
 
-      const currentMax =
-        Number(readRes.data.values?.[0]?.[0]) || 0;
-
-      /* ===== 出價判斷 ===== */
-      if (bidAmount <= currentMax) {
-        await lineClient.replyMessage(event.replyToken, {
-          type: "text",
-          text: "很抱歉，您的出價未高於當前最高出價。"
-        });
-        continue;
-      }
-
-      /* ===== 寫入試算表 A、B 欄 ===== */
+    if (bidAmount <= currentMax) {
+      replyText = '很抱歉，您的出價未高於當前最高出價';
+    } else {
+      // 登錄 A/B
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A:B`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [[displayName, bidAmount]]
-        }
+        range: '工作表1!A:B',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [[userName, bidAmount]] }
       });
 
-      await lineClient.replyMessage(event.replyToken, {
-        type: "text",
-        text: `已收到您的出價：${bidAmount} 元。`
-      });
+      replyText = `已收到您的出價：${bidAmount} 元`;
     }
-
-    res.status(200).end();
   } catch (err) {
-    console.error(err);
-    res.status(500).end();
+    console.error('❌ Sheets 錯誤', err);
+    replyText = '系統發生錯誤，請稍後再試';
   }
+
+  // 回覆 LINE
+  try {
+    await axios.post(
+      'https://api.line.me/v2/bot/message/reply',
+      {
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: replyText }]
+      },
+      { headers: { Authorization: `Bearer ${LINE_TOKEN}` } }
+    );
+  } catch (err) {
+    console.error('❌ LINE 回覆失敗', err.message);
+  }
+
+  res.sendStatus(200);
 });
 
-/* ======================
-   Cloud Run Port
-====================== */
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
 });
