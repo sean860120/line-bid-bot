@@ -15,7 +15,11 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== 出價正則（允許出價X元、出價 X元、出價  X元 等） =====
+// ===== Apps Script Web App URL =====
+const APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbzbuHg4Oau1A1T9SMeUVWHdgf_exXsCGK3FiQwn5_QtM4NlvNFbJpnmOLfNZ81JHf_8/exec';
+
+// ===== 出價正則 =====
 const bidRegex = /^出價\s*([0-9]+)\s*元?$/;
 
 // ===== 取得用戶名稱 =====
@@ -29,6 +33,19 @@ async function getUserName(userId) {
   } catch (err) {
     console.error('❌ 取得用戶名稱失敗', err.response?.data || err.message);
     return userId;
+  }
+}
+
+// ===== 呼叫 Apps Script 執行 checkF1 =====
+async function triggerCheckF1() {
+  try {
+    await axios.post(
+      APPS_SCRIPT_URL,
+      { action: 'checkF1' },
+      { timeout: 1500 }
+    );
+  } catch (err) {
+    console.error('❌ triggerCheckF1 failed', err.message);
   }
 }
 
@@ -58,25 +75,19 @@ app.post('/', async (req, res) => {
 
     const f1Raw = f1Res.data.values?.[0]?.[0];
 
-    // F1 沒值 → 不回覆
     if (!f1Raw) {
       return res.status(200).end();
     }
 
-    // 將 F1 當作「台灣時間」
     const f1Time = new Date(f1Raw.replace(/-/g, '/'));
-
-    // 取得現在「台灣時間」
     const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
-    // 現在時間 >= F1 → 不回覆、不出價
     if (now.getTime() >= f1Time.getTime()) {
       return res.status(200).end();
     }
     // ===== F1 判斷結束 =====
 
-
-    // ===== 原本出價流程，只修改 replyText =====
+    // ===== 取得目前最高出價 =====
     const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: '工作表1!D1'
@@ -86,6 +97,7 @@ app.post('/', async (req, res) => {
     if (bidAmount <= currentMax) {
       replyText = `很抱歉，您未高於最高出價\n目前最高出價為: ${currentMax}元`;
     } else {
+      // ===== 寫入 A:B =====
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: '工作表1!A:B',
@@ -93,6 +105,9 @@ app.post('/', async (req, res) => {
         insertDataOption: 'INSERT_ROWS',
         requestBody: { values: [[userName, bidAmount]] }
       });
+
+      // ===== 新增：通知 Apps Script 立刻 checkF1 =====
+      triggerCheckF1(); // 不 await，避免阻塞 LINE 回覆
 
       replyText = `已收到您的出價：${bidAmount} 元`;
     }
