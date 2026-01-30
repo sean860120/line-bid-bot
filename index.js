@@ -17,7 +17,7 @@ const sheets = google.sheets({ version: 'v4', auth });
 
 // ===== Apps Script Web App URL =====
 const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbz_taMr9CcEy3CYknu3dysnisIwmm1xqDEFrHXYtTTEhb1spkq9EOo7UCxr34cbaXRe/exec';
+  'https://script.google.com/macros/s/AKfycbx_FuQjJ7KOmKb3RGvxijSGsiZJY_laH2D9UfspCES2pB_0JFyz8RHlMqsmla77JYrZ/exec';
 
 // ===== 出價正則 =====
 const bidRegex = /^出價\s*([0-9]+)\s*元?$/;
