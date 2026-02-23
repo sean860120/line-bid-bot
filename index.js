@@ -94,9 +94,15 @@ app.post('/', async (req, res) => {
     });
     const currentMax = parseInt((getRes.data.values?.[0]?.[0] || '0'), 10);
 
-    if (bidAmount <= currentMax) {
-      replyText = `很抱歉，您未高於最高出價\n目前最高出價為: ${currentMax}元`;
-    } else {
+   if (bidAmount <= currentMax) {
+
+  replyText = `很抱歉，您未高於最高出價\n目前最高出價為: ${currentMax}元`;
+
+} else if (bidAmount < currentMax + 50) {
+
+  replyText = `很抱歉，最小出價增額為50元`;
+
+} else {
       // ===== 寫入 A:B =====
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
